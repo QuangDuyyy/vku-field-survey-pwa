@@ -96,3 +96,38 @@ export function deleteSurvey(id) {
   })
 
 }
+// ========================================
+// SAVE / UPDATE SURVEY
+// ========================================
+
+export function saveSurvey(survey) {
+  return dbPromise.then((db) => {
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(
+        "surveys",
+        "readwrite"
+      )
+
+      const store =
+        transaction.objectStore("surveys")
+
+      const request = store.put(survey)
+
+      request.onsuccess = () => {
+        console.log(
+          "Survey saved:",
+          survey.id
+        )
+        resolve()
+      }
+
+      request.onerror = () => {
+        console.error(
+          "Failed to save survey:",
+          request.error
+        )
+        reject(request.error)
+      }
+    })
+  })
+}
