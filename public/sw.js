@@ -127,3 +127,113 @@ self.addEventListener('fetch', (event) => {
       })
   )
 })
+
+// ========================================
+// BACKGROUND SYNC
+// ========================================
+
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-surveys') {
+    console.log('Background Sync triggered')
+
+    event.waitUntil(
+      syncPendingSurveys()
+    )
+  }
+})
+
+async function syncPendingSurveys() {
+  console.log('Syncing pending surveys...')
+
+  const API_URL =
+    'https://script.google.com/macros/s/AKfycbxdRnwb7l4ikNhcH7oB1Z4bgeo4m6i2iyEQz8lOpV5xk1xGEI5-6nQInzmgqPLBCkVI/exec'
+
+  // Open IndexedDB
+  const db = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('VKUFieldSurveyDB')
+
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+
+  // Get all surveys
+  const surveys = await new Promise((resolve, reject) => {
+    const transaction = db.transaction(
+      'surveys',
+      'readonly'
+    )
+
+    const store =
+      transaction.objectStore('surveys')
+
+    const request = store.getAll()
+
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+
+  // Only Pending surveys
+  const pendingSurveys = surveys.filter(
+    survey => survey.status === 'Pending'
+  )
+
+  console.log(
+    'Pending surveys found:',
+    pendingSurveys.length
+  )
+
+  for (const survey of pendingSurveys) {
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          ...survey,
+          photo: survey.photo
+            ? survey.photo.name
+            : ''
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(
+          `HTTP ${response.status}`
+        )
+      }
+
+      const result = await response.json()
+
+      if (!result.success) {
+        throw new Error(
+          result.error || 'Google Sheets sync failed'
+        )
+      }
+
+      // Update status to Synced
+      const transaction = db.transaction(
+        'surveys',
+        'readwrite'
+      )
+
+      const store =
+        transaction.objectStore('surveys')
+
+      survey.status = 'Synced'
+
+      store.put(survey)
+
+      console.log(
+        'Survey synced successfully:',
+        survey.id
+      )
+
+    } catch (error) {
+      console.error(
+        'Failed to sync survey:',
+        survey.id,
+        error
+      )
+    }
+  }
+
+  db.close()
+}
